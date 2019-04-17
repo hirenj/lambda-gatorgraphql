@@ -1,0 +1,166 @@
+---
+Description: GraphQL Api for Gator
+Resources:
+  GraphQLApi:
+    Type: "AWS::AppSync::GraphQLApi"
+    Properties:
+      Name: GraphQL API
+      AuthenticationType: AWS_IAM
+
+  DBDataSource:
+    Type: "AWS::AppSync::DataSource"
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Name: DBTable
+      Description: Data source to get data from
+      Type: AMAZON_DYNAMODB
+      ServiceRoleArn: !GetAtt 'LambdaReadAllDataRole.Arn'
+      DynamoDBConfig:
+        AwsRegion: !Ref AWS::Region
+        TableName: !Ref data
+
+  Gunzipper:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+        const zlib = require('zlib');
+        exports.handler = async (event) => {
+            return new Promise( (resolve,reject) => {
+                zlib.inflate(new Buffer(event.data,'binary'), (err,result) => {
+                    if (err) {
+                        return reject(err);
+                    }
+                    return resolve(result.toString('utf8'));
+                });
+            }).then( inflated => {
+                return {
+                    statusCode: 200,
+                    body: JSON.parse(inflated),
+                }
+            });
+        };
+      Description: Gunzipper
+      Handler: index.handler
+      Role: !GetAtt 'LambdaGunzipperRole.Arn'
+      Runtime: nodejs8.10
+      MemorySize: 128
+      Timeout: 10
+  LambdaGunzipperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+  AppSyncGunzipperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Policies:
+        - PolicyName: AppSyncExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: !Ref Gunzipper
+  GunzipperDataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Name: 'Gunzipper'
+      Description: 'Gunzipper for data'
+      Type: "AWS_LAMBDA"
+      ServiceRoleArn: !Ref AppSyncGunzipperRole
+      LambdaConfig:
+        LambdaFunctionArn: !Ref Gunzipper
+  DataResolver:
+    Type: "AWS::AppSync::Resolver"
+    DependsOn: Schema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: DataItem
+      FieldName: data
+      DataSourceName: !GetAtt GunzipperDataSource.Name
+      RequestMappingTemplate: |
+        {
+          "version" : "2017-02-28",
+          "operation": "Invoke",
+          "payload": $util.toJson($context.source)
+        }
+      ResponseMappingTemplate: |
+        #foreach ($result in $context.result.body)
+          ## Extract type name from the id field.
+          ###set( $typeName = $result.id.split("-")[0] )
+          #set( $ignore = $result.put("__typename", "Domains"))
+        #end
+        $util.toJson($context.result.body)
+  QueryAllPostResolver:
+    Type: "AWS::AppSync::Resolver"
+    DependsOn: Schema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: Query
+      FieldName: getAccs
+      DataSourceName: !GetAtt DBDataSource.Name
+      RequestMappingTemplate: |
+        #set($ids = [])
+        #foreach($id in ${ctx.args.accs})
+          #set($map = {})
+          $util.qr($map.put("acc", $util.dynamodb.toString($id)))
+          $util.qr($map.put("dataset", $util.dynamodb.toString($ctx.args.dataset)))
+          $util.qr($ids.add($map))
+        #end
+        {
+            "version" : "2018-05-29",
+            "operation" : "BatchGetItem",
+            "tables" : {
+                "test-data": {
+                    "keys": $util.toJson($ids),
+                    "consistentRead": true
+                }
+            }
+        }
+      ResponseMappingTemplate: !Sub '$util.toJson({ "items" : $ctx.result.data["${data}"] })'
+  Schema:
+    Type: "AWS::AppSync::GraphQLSchema"
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Definition: |
+        union DataTypes = MsData | Domains
+
+        type Domains {
+          start: Int
+          end: Int
+          dom: String
+        }
+
+        type MsData {
+          acc: String
+          peptide_start: Int
+          peptide_end: Int
+          sites: [[String]]
+          composition: [String]
+        }
+
+        type Query {
+          getTestData(acc: String!, dataset: String!): DataItem
+          listTestData(acc: String!, datasets: [String], nextToken: String): DataItemSet
+          getAccs(accs: [String]!, dataset: String): DataItemSet
+        }
+
+        type DataItem {
+          acc: String!
+          dataset: String
+          data: [DataTypes]
+        }
+
+        type DataItemSet {
+          items: [DataItem]
+          nextToken: String
+        }
+Outputs:
