@@ -60,6 +60,13 @@ Resources:
   AppSyncGunzipperRole:
     Type: AWS::IAM::Role
     Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: appsync.amazonaws.com
+            Action: sts:AssumeRole
       Policies:
         - PolicyName: AppSyncExecutionPolicy
           PolicyDocument:
@@ -68,7 +75,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - "lambda:InvokeFunction"
-                Resource: !Ref Gunzipper
+                Resource: !GetAtt Gunzipper.Arn
   GunzipperDataSource:
     Type: AWS::AppSync::DataSource
     Properties:
@@ -76,9 +83,9 @@ Resources:
       Name: 'Gunzipper'
       Description: 'Gunzipper for data'
       Type: "AWS_LAMBDA"
-      ServiceRoleArn: !Ref AppSyncGunzipperRole
+      ServiceRoleArn: !GetAtt AppSyncGunzipperRole.Arn
       LambdaConfig:
-        LambdaFunctionArn: !Ref Gunzipper
+        LambdaFunctionArn: !GetAtt Gunzipper.Arn
   DataResolver:
     Type: "AWS::AppSync::Resolver"
     DependsOn: Schema
