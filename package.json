@@ -1,0 +1,19 @@
+{
+  "name": "lambda-gatorgraphql",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hirenj/lambda-gatorgraphql.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hirenj/lambda-gatorgraphql/issues"
+  },
+  "homepage": "https://github.com/hirenj/lambda-gatorgraphql#readme"
+}
