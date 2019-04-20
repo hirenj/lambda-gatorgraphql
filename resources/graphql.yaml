@@ -107,8 +107,31 @@ Resources:
           }
         }
       ResponseMappingTemplate: |
+        #set ($grants = $ctx.stash.grants )
+        #set ($dataset = $ctx.stash.dataset )
+        #set ($groupids = $ctx.result.items[0]["group_ids"])
+        #set ($anymatch = 0)
+        #set ($testedkeys = [])
+        #set ($testedpatterns = [])
+        $util.qr($testedkeys.add('START'))
+        $util.qr($testedpaterns.add('START'))
+        #foreach ($grant in $grants.entrySet())
+          $util.qr($testedkeys.add($grant.key))
+          #foreach ($groupid in $groupids)
+              $util.qr($testedpatterns.add("${groupid}/${dataset}"))
+              $util.qr($testedpatterns.add("${groupid}/*"))
+              #if ($grant.key == "${groupid}/${dataset}" || $grant.key == "${groupid}/*" )
+                #set( $anymatch = 1)
+              #end
+          #end
+        #end
+        #if ($anymatch == 0)
+          $util.unauthorized()
+        #end
         $util.qr($ctx.stash.put("mime", $ctx.result.items[0].metadata.mimetype))
-        $util.qr($ctx.stash.put("groupids", $ctx.result.items[0]["group_ids"]))
+        $util.qr($ctx.stash.put("groupids", $groupids))
+        $util.qr($ctx.stash.put("testedkeys", $testedkeys))
+        $util.qr($ctx.stash.put("testedpatterns", $testedpatterns))
         {}
   DataResolver:
     Type: "AWS::AppSync::Resolver"
