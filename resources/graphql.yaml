@@ -86,14 +86,14 @@ Resources:
       ServiceRoleArn: !GetAtt AppSyncGunzipperRole.Arn
       LambdaConfig:
         LambdaFunctionArn: !GetAtt Gunzipper.Arn
-  MetadataPopulate:
+  DatasetAuthoriser:
     Type: "AWS::AppSync::FunctionConfiguration"
     Properties:
       ApiId: !GetAtt GraphQLApi.ApiId
-      Name: MetadataPopulate
-      Description: Populate metadata
+      Name: DatasetAuthoriser
+      Description: Authoriser for datasets
       DataSourceName: !GetAtt DBDataSource.Name
-      FunctionVersion: 1.0
+      FunctionVersion: '2018-05-29'
       RequestMappingTemplate: |
         {
           "version" : "2017-02-28",
@@ -101,13 +101,15 @@ Resources:
           "query" : {
             "expression": "dataset = :dataset and acc = :acc",
             "expressionValues" : {
-              ":dataset" : $util.dynamodb.toDynamoDBJson($ctx.source.dataset),
+              ":dataset" : $util.dynamodb.toDynamoDBJson($ctx.stash.dataset),
               ":acc" : $util.dynamodb.toDynamoDBJson("metadata")
             }
           }
         }
       ResponseMappingTemplate: |
-        $util.toJson({"mime" : $ctx.result.items[0].metadata.mimetype, "groupids" : $ctx.result.items[0]["group_ids"] })
+        $util.qr($ctx.stash.put("mime", $ctx.result.items[0].metadata.mimetype))
+        $util.qr($ctx.stash.put("groupds", $ctx.result.items[0]["group_ids"]))
+        {}
   DataResolver:
     Type: "AWS::AppSync::Resolver"
     DependsOn: Schema
@@ -117,6 +119,7 @@ Resources:
       FieldName: data
       DataSourceName: !GetAtt GunzipperDataSource.Name
       RequestMappingTemplate: |
+        $util.qr($ctx.stash.put("mime", $ctx.source.mimetype))
         {
           "version" : "2017-02-28",
           "operation": "Invoke",
@@ -124,9 +127,11 @@ Resources:
         }
       ResponseMappingTemplate: |
         #foreach ($result in $context.result.body)
-          ## Extract type name from the id field.
-          ###set( $typeName = $result.id.split("-")[0] )
-          #set( $ignore = $result.put("__typename", "Domains"))
+          #if( $ctx.stash.mime == 'application/json+glycodomain')
+            #set( $ignore = $result.put("__typename", "Domains"))
+          #elseif( $ctx.stash.mime == 'application/json+msdata')
+            #set( $ignore = $result.put("__typename", "MsData"))
+          #end
         #end
         $util.toJson($context.result.body)
   QueryAllPostResolver:
@@ -136,7 +141,26 @@ Resources:
       ApiId: !GetAtt GraphQLApi.ApiId
       TypeName: Query
       FieldName: getAccs
+      Kind: PIPELINE
+      PipelineConfig:
+        Functions:
+          - !GetAtt DatasetAuthoriser.FunctionId
+          - !GetAtt MultipleAccRetriever.FunctionId
+      RequestMappingTemplate: |
+        $util.qr($ctx.stash.put("accs", $ctx.args.accs))
+        $util.qr($ctx.stash.put("dataset", $ctx.args.dataset))
+        $util.qr($ctx.stash.put("grants", $ctx.request.headers.grants))
+        {}
+      ResponseMappingTemplate: |
+        $util.toJson($ctx.result)
+  MultipleAccRetriever:
+    Type: "AWS::AppSync::FunctionConfiguration"
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Name: QueryAllPostResolver
+      Description: Get multiple accs for dataset
       DataSourceName: !GetAtt DBDataSource.Name
+      FunctionVersion: '2018-05-29'
       RequestMappingTemplate: |
         #set($ids = [])
         #foreach($id in ${ctx.args.accs})
@@ -155,7 +179,12 @@ Resources:
                 }
             }
         }
-      ResponseMappingTemplate: !Sub '$util.toJson({ "items" : $ctx.result.data["${data}"], "dataset" : $ctx.args.dataset })'
+      ResponseMappingTemplate: !Sub |
+        #foreach ($result in $ctx.result.data["${data}"])
+          ## Extract type name from the id field.
+          $util.qr($result.put("mimetype",$ctx.stash.mime))
+        #end
+        $util.toJson({ "items" : $ctx.result.data["${data}"], "dataset" : $ctx.args.dataset })
   Schema:
     Type: "AWS::AppSync::GraphQLSchema"
     Properties:
