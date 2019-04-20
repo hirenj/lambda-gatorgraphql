@@ -108,7 +108,7 @@ Resources:
         }
       ResponseMappingTemplate: |
         $util.qr($ctx.stash.put("mime", $ctx.result.items[0].metadata.mimetype))
-        $util.qr($ctx.stash.put("groupds", $ctx.result.items[0]["group_ids"]))
+        $util.qr($ctx.stash.put("groupids", $ctx.result.items[0]["group_ids"]))
         {}
   DataResolver:
     Type: "AWS::AppSync::Resolver"
@@ -149,7 +149,7 @@ Resources:
       RequestMappingTemplate: |
         $util.qr($ctx.stash.put("accs", $ctx.args.accs))
         $util.qr($ctx.stash.put("dataset", $ctx.args.dataset))
-        $util.qr($ctx.stash.put("grants", $ctx.request.headers.grants))
+        $util.qr($ctx.stash.put("grants", $util.parseJson($ctx.request.headers.grants)))
         {}
       ResponseMappingTemplate: |
         $util.toJson($ctx.result)
