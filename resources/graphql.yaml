@@ -129,6 +129,7 @@ Resources:
           $util.unauthorized()
         #end
         $util.qr($ctx.stash.put("mime", $ctx.result.items[0].metadata.mimetype))
+        $util.qr($ctx.stash.put("locations", $ctx.result.items[0].metadata.locations))
         $util.qr($ctx.stash.put("groupids", $groupids))
         $util.qr($ctx.stash.put("testedkeys", $testedkeys))
         $util.qr($ctx.stash.put("testedpatterns", $testedpatterns))
@@ -143,17 +144,36 @@ Resources:
       DataSourceName: !GetAtt GunzipperDataSource.Name
       RequestMappingTemplate: |
         $util.qr($ctx.stash.put("mime", $ctx.source.mimetype))
+        $util.qr($ctx.stash.put("locations", $ctx.source.locations))
         {
           "version" : "2017-02-28",
           "operation": "Invoke",
           "payload": $util.toJson($context.source)
         }
       ResponseMappingTemplate: |
-        #foreach ($result in $context.result.body)
-          #if( $ctx.stash.mime == 'application/json+glycodomain')
-            #set( $ignore = $result.put("__typename", "Domains"))
-          #elseif( $ctx.stash.mime == 'application/json+msdata')
-            #set( $ignore = $result.put("__typename", "MsData"))
+        #if( $ctx.stash.mime == 'application/json+slim_expression')
+          #set($newresults = [])
+          #set($size = $context.result.body.size())
+          #set( $locationcount = $size / 2 )
+          #set( $locationcount = $locationcount - 1 )
+          #foreach($index in [0..$locationcount])
+            #set($map = {})
+              $util.qr( $map.put("__typename","SlimExpression"))
+              #set( $locindex = 2 * $index )
+              #set( $valindex = $locindex + 1 )
+              $util.qr( $map.put("location", $ctx.stash.locations.get($ctx.result.body.get($locindex)).description ))
+              $util.qr( $map.put("tissue", $ctx.stash.locations.get($ctx.result.body.get($locindex)).simple_tissue ))
+              $util.qr( $map.put("value", $ctx.result.body.get($valindex)))
+              $util.qr($newresults.add($map))
+          #end
+          $util.qr($ctx.result.put("body",$newresults))
+        #else
+          #foreach ($result in $context.result.body)
+            #if( $ctx.stash.mime == 'application/json+glycodomain')
+              #set( $ignore = $result.put("__typename", "Domains"))
+            #elseif( $ctx.stash.mime == 'application/json+msdata')
+              #set( $ignore = $result.put("__typename", "MsData"))
+            #end
           #end
         #end
         $util.toJson($context.result.body)
@@ -206,6 +226,7 @@ Resources:
         #foreach ($result in $ctx.result.data["${data}"])
           ## Extract type name from the id field.
           $util.qr($result.put("mimetype",$ctx.stash.mime))
+          $util.qr($result.put("locations",$ctx.stash.locations))
         #end
         #set( $unprocessed = [] )
         #foreach ($unprocessed in $ctx.result.unprocessedKeys["${data}"])
@@ -217,7 +238,7 @@ Resources:
     Properties:
       ApiId: !GetAtt GraphQLApi.ApiId
       Definition: |
-        union DataTypes = MsData | Domains
+        union DataTypes = MsData | Domains | SlimExpression
 
         type Domains {
           start: Int
@@ -231,6 +252,12 @@ Resources:
           peptide_end: Int
           sites: [[String]]
           composition: [String]
+        }
+
+        type SlimExpression {
+          location: String
+          value: Float
+          tissue: String
         }
 
         type Query {
