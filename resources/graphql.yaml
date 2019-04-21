@@ -165,7 +165,13 @@ Resources:
               $util.qr( $map.put("location", $ctx.stash.locations.get($ctx.result.body.get($locindex)).description ))
               $util.qr( $map.put("tissue", $ctx.stash.locations.get($ctx.result.body.get($locindex)).simple_tissue ))
               $util.qr( $map.put("value", $ctx.result.body.get($valindex)))
-              $util.qr($newresults.add($map))
+              #if ( $ctx.arguments.filter.location )
+                #if ( $map.location.toLowerCase().contains($ctx.arguments.filter.location.toLowerCase()) )
+                  $util.qr($newresults.add($map))
+                #end
+              #else
+                $util.qr($newresults.add($map))
+              #end
           #end
           $util.qr($ctx.result.put("body",$newresults))
         #else
@@ -241,6 +247,10 @@ Resources:
       Definition: |
         union DataTypes = MsData | Domains | SlimExpression
 
+        input DataFilter {
+          location: String
+        }
+
         type Domains {
           start: Int
           end: Int
@@ -270,7 +280,7 @@ Resources:
         type DataItem {
           acc: String!
           dataset: String
-          data: [DataTypes]
+          data(filter: DataFilter): [DataTypes]
         }
 
         type DataItemSet {
