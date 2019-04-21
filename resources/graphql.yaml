@@ -126,6 +126,7 @@ Resources:
           #end
         #end
         #if ($anymatch == 0)
+          ## Bail out if no matches for dataset
           $util.unauthorized()
         #end
         $util.qr($ctx.stash.put("mime", $ctx.result.items[0].metadata.mimetype))
