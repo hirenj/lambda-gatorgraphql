@@ -213,12 +213,21 @@ Resources:
       FunctionVersion: '2018-05-29'
       RequestMappingTemplate: |
         #set($ids = [])
+        #set($unprocessed = [])
+        #set($total = 0)
         #foreach($id in ${ctx.args.accs})
           #set($map = {})
-          $util.qr($map.put("acc", $util.dynamodb.toString($id)))
-          $util.qr($map.put("dataset", $util.dynamodb.toString($ctx.args.dataset)))
-          $util.qr($ids.add($map))
+          #if ( $total < 50 )
+            $util.qr($map.put("acc", $util.dynamodb.toString($id)))
+            $util.qr($map.put("dataset", $util.dynamodb.toString($ctx.args.dataset)))
+            $util.qr($ids.add($map))
+            #set ( $total = $total + 1 )
+          #else
+            $util.qr($unprocessed.add($id))
+          #end
+
         #end
+        $util.qr($ctx.stash.put("unprocessed",$unprocessed))
         {
             "version" : "2018-05-29",
             "operation" : "BatchGetItem",
@@ -235,9 +244,9 @@ Resources:
           $util.qr($result.put("mimetype",$ctx.stash.mime))
           $util.qr($result.put("locations",$ctx.stash.locations))
         #end
-        #set( $unprocessed = [] )
-        #foreach ($unprocessed in $ctx.result.unprocessedKeys["${data}"])
-          $util.qr( $unprocessed.add($unprocessed.acc))
+        #set( $unprocessed = $ctx.stash.unprocessed )
+        #foreach ($skipped in $ctx.result.unprocessedKeys["${data}"])
+          $util.qr( $unprocessed.add($skipped.acc))
         #end
         $util.toJson({ "items" : $ctx.result.data["${data}"], "dataset" : $ctx.args.dataset, "unprocessed" : $unprocessed })
   Schema:
