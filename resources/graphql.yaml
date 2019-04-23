@@ -224,10 +224,17 @@ Resources:
           $util.qr($ctx.stash.put("grants", $util.parseJson($PUBLIC_GRANT)))
         #end
         {
-            "version" : "2017-02-28",
+          "version" : "2017-02-28",
           "operation" : "Query",
-            "query" : {
-                ## Provide a query expression. **
+          #if( $ctx.args.filter )
+            "filter" : {
+                "expression" : "metadata.mimetype = :mime",
+                "expressionValues" : {
+                    ":mime" : $util.dynamodb.toDynamoDBJson("$ctx.args.filter.mimetype")
+                }
+            },
+          #end
+          "query" : {
                 "expression": "acc = :acc",
                 "expressionValues" : {
                     ":acc" : $util.dynamodb.toDynamoDBJson("metadata")
@@ -272,31 +279,59 @@ Resources:
           #end
 
           #if ($anymatch == 1)
-            #if ( $item.metadata.locations )
-            #foreach ($loc in $item.metadata.locations)
+            #if ( $item.metadata.sample )
               #set( $map = {} )
-                    #set( $current_locs = {} )
-              $util.qr( $map.put("location", $loc.description ))
-              $util.qr( $map.put("tissue", $loc.get("simple_tissue") ))
-              #set( $mapkey = "${map.location}/${map.tissue}" )
+              #set( $cell = "")
+              #set( $tissue = "")
+              #set( $cell = $item.metadata.sample.get("cell_type") )
+              #set( $tissue = $item.metadata.sample.get("description") )
+              $util.qr( $map.put("location", $cell ))
+              $util.qr( $map.put("tissue", $tissue ))
+              #set( $mapkey = "${map.location}x/x${map.tissue}" )
               #set( $alphabetic_key = $mapkey.replaceAll("[^A-Za-z0-9]", "").substring(0,1).toLowerCase() )
-                    #if ( $all_locations_set.get($alphabetic_key) )
+              #if ( $all_locations_set.get($alphabetic_key) )
                 #set( $current_locs = $all_locations_set.get($alphabetic_key) )
-                    #else
+              #else
                 #set( $current_locs = {} )
               #end
               #if ( $current_locs.containsKey($mapkey) )
-                      #set( $existing_val = $current_locs.get($mapkey) )
+                #set( $existing_val = $current_locs.get($mapkey) )
                 $util.qr($current_locs.get($mapkey).datasets.add($dataset))
               #else
                 $util.qr( $map.put("datasets", [] ) )
                 $util.qr( $map.datasets.add($dataset) )
                 $util.qr( $current_locs.put( $mapkey, $map ) )
               #end
-                    #if ( ! $current_locs.isEmpty() )
+              #if ( ! $current_locs.isEmpty() )
                 $util.qr($all_locations_set.put($alphabetic_key, $current_locs))
-                    #end
+              #end
+
             #end
+            #if ( $item.metadata.locations )
+              #foreach ($loc in $item.metadata.locations)
+                #set( $map = {} )
+                #set( $current_locs = {} )
+                $util.qr( $map.put("location", $loc.description ))
+                $util.qr( $map.put("tissue", $loc.get("simple_tissue") ))
+                #set( $mapkey = "${map.location}/${map.tissue}" )
+                #set( $alphabetic_key = $mapkey.replaceAll("[^A-Za-z0-9]", "").substring(0,1).toLowerCase() )
+                #if ( $all_locations_set.get($alphabetic_key) )
+                  #set( $current_locs = $all_locations_set.get($alphabetic_key) )
+                #else
+                  #set( $current_locs = {} )
+                #end
+                #if ( $current_locs.containsKey($mapkey) )
+                  #set( $existing_val = $current_locs.get($mapkey) )
+                  $util.qr($current_locs.get($mapkey).datasets.add($dataset))
+                #else
+                  $util.qr( $map.put("datasets", [] ) )
+                  $util.qr( $map.datasets.add($dataset) )
+                  $util.qr( $current_locs.put( $mapkey, $map ) )
+                #end
+                #if ( ! $current_locs.isEmpty() )
+                  $util.qr($all_locations_set.put($alphabetic_key, $current_locs))
+                #end
+              #end
             #end
           #end
         #end
