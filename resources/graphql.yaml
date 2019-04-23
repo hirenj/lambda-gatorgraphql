@@ -197,12 +197,120 @@ Resources:
           - !GetAtt DatasetAuthoriser.FunctionId
           - !GetAtt MultipleAccRetriever.FunctionId
       RequestMappingTemplate: |
+        #set( $PUBLIC_GRANT = "[{""public/*"":[""*""],""proteins"":[]}]")
         $util.qr($ctx.stash.put("accs", $ctx.args.accs))
         $util.qr($ctx.stash.put("dataset", $ctx.args.dataset))
-        $util.qr($ctx.stash.put("grants", $util.parseJson($ctx.request.headers.grants)))
+        #if( $!ctx.request.headers.grants != "" )
+          $util.qr($ctx.stash.put("grants", $util.parseJson($ctx.request.headers.grants)))
+        #else
+          $util.qr($ctx.stash.put("grants", $util.parseJson($PUBLIC_GRANT)))
+        #end
         {}
       ResponseMappingTemplate: |
         $util.toJson($ctx.result)
+  MetadataRetriever:
+    Type: "AWS::AppSync::Resolver"
+    DependsOn: Schema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: Query
+      FieldName: getTissuesCellMetadata
+      DataSourceName: !GetAtt DBDataSource.Name
+      RequestMappingTemplate: |
+        #set( $PUBLIC_GRANT = "{""public/*"":[""*""],""proteins"":[]}")
+        #if( $!{$ctx.request.headers.grants} )
+          $util.qr($ctx.stash.put("grants", $util.parseJson($ctx.request.headers.grants)))
+        #else
+          $util.qr($ctx.stash.put("grants", $util.parseJson($PUBLIC_GRANT)))
+        #end
+        {
+            "version" : "2017-02-28",
+          "operation" : "Query",
+            "query" : {
+                ## Provide a query expression. **
+                "expression": "acc = :acc",
+                "expressionValues" : {
+                    ":acc" : $util.dynamodb.toDynamoDBJson("metadata")
+                }
+            }
+        }
+      ResponseMappingTemplate: |
+        #if($ctx.error)
+          $util.error($ctx.error.message, $ctx.error.type)
+        #end
+        #set( $all_locations_set = { } )
+        $util.qr( $all_locations_set.put( "a", {} ))
+
+        #set ($grants = $ctx.stash.grants )
+
+
+        #set ($testedkeys = [])
+        #set ($testedpatterns = [])
+        #set ($allkeys = [])
+
+        #foreach ($item in $ctx.result.items)
+
+          #set ($dataset = $item.dataset )
+          #if ($item.get("group_ids"))
+            #set ($groupids = $item.get("group_ids"))
+          #else
+            #set ($groupids = [])
+          #end
+          $util.qr($ctx.stash.put("lastitem_dataset",$dataset ))
+          #set ($anymatch = 0)
+          $util.qr($testedkeys.add('START'))
+          $util.qr($testedpaterns.add('START'))
+          #foreach ($grant in $grants.entrySet())
+            $util.qr($testedkeys.add($grant.key))
+            #foreach ($groupid in $groupids)
+                $util.qr($testedpatterns.add("${groupid}/${dataset}"))
+                $util.qr($testedpatterns.add("${groupid}/*"))
+                #if ($grant.key == "${groupid}/${dataset}" || $grant.key == "${groupid}/*" )
+                  #set( $anymatch = 1)
+                #end
+            #end
+          #end
+
+          #if ($anymatch == 1)
+            #if ( $item.metadata.locations )
+            #foreach ($loc in $item.metadata.locations)
+              #set( $map = {} )
+                    #set( $current_locs = {} )
+              $util.qr( $map.put("location", $loc.description ))
+              $util.qr( $map.put("tissue", $loc.get("simple_tissue") ))
+              #set( $mapkey = "${map.location}/${map.tissue}" )
+              #set( $alphabetic_key = $mapkey.replaceAll("[^A-Za-z0-9]", "").substring(0,1).toLowerCase() )
+                    #if ( $all_locations_set.get($alphabetic_key) )
+                #set( $current_locs = $all_locations_set.get($alphabetic_key) )
+                    #else
+                #set( $current_locs = {} )
+              #end
+              #if ( $current_locs.containsKey($mapkey) )
+                      #set( $existing_val = $current_locs.get($mapkey) )
+                $util.qr($current_locs.get($mapkey).datasets.add($dataset))
+              #else
+                $util.qr( $map.put("datasets", [] ) )
+                $util.qr( $map.datasets.add($dataset) )
+                $util.qr( $current_locs.put( $mapkey, $map ) )
+              #end
+                    #if ( ! $current_locs.isEmpty() )
+                $util.qr($all_locations_set.put($alphabetic_key, $current_locs))
+                    #end
+            #end
+            #end
+          #end
+        #end
+
+        #set( $resultset = [] )
+        #foreach( $locset in $all_locations_set.entrySet() )
+               #set( $results = [] )
+               #foreach ($loc in $locset.value.entrySet())
+                 $util.qr($loc.value.put("__typename","TissueCellMetadata"))
+                 $util.qr($results.add($loc.value))
+               #end
+               $util.qr($resultset.add($results))
+        #end
+        $util.toJson($resultset)
   MultipleAccRetriever:
     Type: "AWS::AppSync::FunctionConfiguration"
     Properties:
@@ -260,6 +368,10 @@ Resources:
           location: String
         }
 
+        input DataSetFilter {
+          mimetype: String
+        }
+
         type Domains {
           start: Int
           end: Int
@@ -281,15 +393,20 @@ Resources:
         }
 
         type Query {
-          getTestData(acc: String!, dataset: String!): DataItem
-          listTestData(acc: String!, datasets: [String], nextToken: String): DataItemSet
           getAccs(accs: [String]!, dataset: String): DataItemSet
+          getTissuesCellMetadata(filter: DataSetFilter): [[TissueCellMetadata]]
         }
 
         type DataItem {
           acc: String!
           dataset: String
           data(filter: DataFilter): [DataTypes]
+        }
+
+        type TissueCellMetadata {
+          tissue: String
+          location: String
+          datasets: [String]
         }
 
         type DataItemSet {
