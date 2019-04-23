@@ -86,6 +86,65 @@ Resources:
       ServiceRoleArn: !GetAtt AppSyncGunzipperRole.Arn
       LambdaConfig:
         LambdaFunctionArn: !GetAtt Gunzipper.Arn
+  ProtectedS3:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: >
+          const AWS = require('aws-sdk');
+          const S3 = new AWS.S3();
+          const signer = async (event) => {
+            event.Expires = 60;
+            const url = s3.getSignedUrl('getObject', event);
+            return Promise.resolve({ url });
+          };
+          const metadata = async (event) => {
+            return new Promise( (resolve,reject) => {
+              S3.getObject(event, (err, data) => {
+                if (err) {
+                  reject(err);
+                  return;
+                }
+                resolve(data.Metadata);
+              });
+            });
+          };
+
+          exports.handler = async (event) => {
+            if (event.sign) {
+              delete event.sign;
+              return signer(event);
+            } else {
+              return metadata(event);
+            }
+          };
+      Description: ProtectedS3
+      Handler: index.handler
+      Role: !GetAtt 'LambdaProtectedS3Role.Arn'
+      Runtime: nodejs8.10
+      MemorySize: 128
+      Timeout: 10
+  LambdaProtectedS3Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadProtectedStatic
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadProtectedStatic
+                Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource:
+                  - !<!Sub> 'arn:aws:s3:::${dataBucket}/protectedstatic/*'
   DatasetAuthoriser:
     Type: "AWS::AppSync::FunctionConfiguration"
     Properties:
