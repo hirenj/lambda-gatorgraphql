@@ -292,6 +292,12 @@ Resources:
       FieldName: protectedFile
       DataSourceName: !GetAtt ProtectedS3DataSource.Name
       RequestMappingTemplate: !Sub |
+        #set( $PUBLIC_GRANT = "{""public_files/*"":[""*""]}")
+        #if( $!{$ctx.request.headers.grants} )
+          $util.qr($ctx.stash.put("grants", $util.parseJson($ctx.request.headers.grants)))
+        #else
+          $util.qr($ctx.stash.put("grants", $util.parseJson($PUBLIC_GRANT)))
+        #end
         #set( $filepath = $ctx.args.path )
         #set( $bucket = "${dataBucket}")
         #set( $map = {} )
@@ -303,6 +309,22 @@ Resources:
           "payload": $util.toJson($map)
         }
       ResponseMappingTemplate: |
+        #set($filepath = $ctx.args.path)
+        #set($grants = $ctx.stash.grants)
+        #set($anymatch = 0)
+        #set($groupids = $ctx.result.groups.split("[, ]+"))
+        #set($testedkeys = [])
+        #foreach ($grant in $grants.entrySet())
+          #foreach ($groupid in $groupids)
+            #if ($grant.key == "${groupid}/${filepath}" || $grant.key == "${groupid}/*" )
+              #set( $anymatch = 1)
+            #end
+          #end
+        #end
+
+        #if ($anymatch == 0)
+          $util.unauthorized()
+        #end
         $util.qr( $ctx.result.put("path", $ctx.args.path ))
         $util.toJson($ctx.result)
   QueryAllPostResolver:
@@ -318,10 +340,10 @@ Resources:
           - !GetAtt DatasetAuthoriser.FunctionId
           - !GetAtt MultipleAccRetriever.FunctionId
       RequestMappingTemplate: |
-        #set( $PUBLIC_GRANT = "[{""public/*"":[""*""],""proteins"":[]}]")
+        #set( $PUBLIC_GRANT = "{""public/*"":[""*""],""proteins"":[]}")
         $util.qr($ctx.stash.put("accs", $ctx.args.accs))
         $util.qr($ctx.stash.put("dataset", $ctx.args.dataset))
-        #if( $!ctx.request.headers.grants != "" )
+        #if( $!{$ctx.request.headers.grants} )
           $util.qr($ctx.stash.put("grants", $util.parseJson($ctx.request.headers.grants)))
         #else
           $util.qr($ctx.stash.put("grants", $util.parseJson($PUBLIC_GRANT)))
