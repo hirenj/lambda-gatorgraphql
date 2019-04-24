@@ -497,11 +497,11 @@ Resources:
       Description: Get multiple accs for dataset
       DataSourceName: !GetAtt DBDataSource.Name
       FunctionVersion: '2018-05-29'
-      RequestMappingTemplate: |
+      RequestMappingTemplate: !Sub |
         #set($ids = [])
         #set($unprocessed = [])
         #set($total = 0)
-        #foreach($id in ${ctx.args.accs})
+        #foreach($id in $ctx.args.accs)
           #set($map = {})
           #if ( $total < 50 )
             $util.qr($map.put("acc", $util.dynamodb.toString($id)))
@@ -518,7 +518,7 @@ Resources:
             "version" : "2018-05-29",
             "operation" : "BatchGetItem",
             "tables" : {
-                "test-data": {
+                "${data}": {
                     "keys": $util.toJson($ids),
                     "consistentRead": true
                 }
