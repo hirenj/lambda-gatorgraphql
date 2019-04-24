@@ -50,6 +50,8 @@ Resources:
   LambdaGunzipperRole:
     Type: AWS::IAM::Role
     Properties:
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -57,7 +59,7 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
-  AppSyncGunzipperRole:
+  AppSyncLambdaRunnerRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -75,7 +77,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - "lambda:InvokeFunction"
-                Resource: !GetAtt Gunzipper.Arn
+                Resource:
+                  - !GetAtt Gunzipper.Arn
+                  - !GetAtt ProtectedS3.Arn
   GunzipperDataSource:
     Type: AWS::AppSync::DataSource
     Properties:
@@ -83,7 +87,7 @@ Resources:
       Name: 'Gunzipper'
       Description: 'Gunzipper for data'
       Type: "AWS_LAMBDA"
-      ServiceRoleArn: !GetAtt AppSyncGunzipperRole.Arn
+      ServiceRoleArn: !GetAtt AppSyncLambdaRunnerRole.Arn
       LambdaConfig:
         LambdaFunctionArn: !GetAtt Gunzipper.Arn
   ProtectedS3:
@@ -93,11 +97,13 @@ Resources:
         ZipFile: >
           const AWS = require('aws-sdk');
           const S3 = new AWS.S3();
+
           const signer = async (event) => {
             event.Expires = 60;
-            const url = s3.getSignedUrl('getObject', event);
+            const url = S3.getSignedUrl('getObject', event);
             return Promise.resolve({ url });
           };
+
           const metadata = async (event) => {
             return new Promise( (resolve,reject) => {
               S3.getObject(event, (err, data) => {
@@ -127,6 +133,8 @@ Resources:
   LambdaProtectedS3Role:
     Type: AWS::IAM::Role
     Properties:
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -145,6 +153,16 @@ Resources:
                   - 's3:GetObject'
                 Resource:
                   - !<!Sub> 'arn:aws:s3:::${dataBucket}/protectedstatic/*'
+  ProtectedS3DataSource:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      Name: 'ProtectedS3'
+      Description: 'Protected S3 resource'
+      Type: "AWS_LAMBDA"
+      ServiceRoleArn: !GetAtt AppSyncLambdaRunnerRole.Arn
+      LambdaConfig:
+        LambdaFunctionArn: !GetAtt ProtectedS3.Arn
   DatasetAuthoriser:
     Type: "AWS::AppSync::FunctionConfiguration"
     Properties:
@@ -243,6 +261,50 @@ Resources:
           #end
         #end
         $util.toJson($context.result.body)
+  ProtectedFileUrlResolver:
+    Type: "AWS::AppSync::Resolver"
+    DependsOn: Schema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: ProtectedFile
+      FieldName: url
+      DataSourceName: !GetAtt ProtectedS3DataSource.Name
+      RequestMappingTemplate: !Sub |
+        #set( $filepath = $ctx.source.path )
+        #set( $bucket = "${dataBucket}")
+        #set( $map = {} )
+        $util.qr($map.put("Key", "protectedstatic/$filepath"))
+        $util.qr($map.put("Bucket", $bucket))
+        $util.qr($map.put("sign", 1))
+        {
+          "version" : "2017-02-28",
+          "operation": "Invoke",
+          "payload": $util.toJson($map)
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($ctx.result.url)
+  QueryProtectedFileResolver:
+    Type: "AWS::AppSync::Resolver"
+    DependsOn: Schema
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      TypeName: Query
+      FieldName: protectedFile
+      DataSourceName: !GetAtt ProtectedS3DataSource.Name
+      RequestMappingTemplate: !Sub |
+        #set( $filepath = $ctx.args.path )
+        #set( $bucket = "${dataBucket}")
+        #set( $map = {} )
+        $util.qr($map.put("Key", "protectedstatic/$filepath"))
+        $util.qr($map.put("Bucket", $bucket))
+        {
+          "version" : "2017-02-28",
+          "operation": "Invoke",
+          "payload": $util.toJson($map)
+        }
+      ResponseMappingTemplate: |
+        $util.qr( $ctx.result.put("path", $ctx.args.path ))
+        $util.toJson($ctx.result)
   QueryAllPostResolver:
     Type: "AWS::AppSync::Resolver"
     DependsOn: Schema
@@ -489,6 +551,7 @@ Resources:
         type Query {
           getAccs(accs: [String]!, dataset: String): DataItemSet
           getTissuesCellMetadata(filter: DataSetFilter): [[TissueCellMetadata]]
+          protectedFile(path: String): ProtectedFile
         }
 
         type DataItem {
@@ -507,4 +570,8 @@ Resources:
           items: [DataItem]
           nextToken: String
           unprocessed: [String]
+        }
+
+        type ProtectedFile {
+          url: String!
         }
