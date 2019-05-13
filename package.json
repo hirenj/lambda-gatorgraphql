@@ -10,6 +10,9 @@
     "type": "git",
     "url": "git+https://github.com/hirenj/lambda-gatorgraphql.git"
   },
+  "devDependencies": {
+    "grunt": "^0.4.5"
+  },
   "author": "",
   "license": "ISC",
   "bugs": {
