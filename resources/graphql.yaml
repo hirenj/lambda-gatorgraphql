@@ -293,8 +293,9 @@ Resources:
       DataSourceName: !GetAtt ProtectedS3DataSource.Name
       RequestMappingTemplate: !Sub |
         #set( $PUBLIC_GRANT = "{""public_files/*"":[""*""]}")
-        #if( $!{$ctx.request.headers.grants} )
-          $util.qr($ctx.stash.put("grants", $util.parseJson($ctx.request.headers.grants)))
+        #set( $inputgrant = $ctx.request.headers.grants )
+        #if($inputgrant && $inputgrant != '')
+          $util.qr($ctx.stash.put("grants", $util.parseJson($inputgrant)))
         #else
           $util.qr($ctx.stash.put("grants", $util.parseJson($PUBLIC_GRANT)))
         #end
@@ -340,11 +341,12 @@ Resources:
           - !GetAtt DatasetAuthoriser.FunctionId
           - !GetAtt MultipleAccRetriever.FunctionId
       RequestMappingTemplate: |
-        #set( $PUBLIC_GRANT = "{""public/*"":[""*""],""proteins"":[]}")
         $util.qr($ctx.stash.put("accs", $ctx.args.accs))
         $util.qr($ctx.stash.put("dataset", $ctx.args.dataset))
-        #if( $!{$ctx.request.headers.grants} )
-          $util.qr($ctx.stash.put("grants", $util.parseJson($ctx.request.headers.grants)))
+        #set( $PUBLIC_GRANT = "{""public/*"":[""*""]}")
+        #set( $inputgrant = $ctx.request.headers.grants )
+        #if($inputgrant && $inputgrant != '')
+          $util.qr($ctx.stash.put("grants", $util.parseJson($inputgrant)))
         #else
           $util.qr($ctx.stash.put("grants", $util.parseJson($PUBLIC_GRANT)))
         #end
@@ -360,9 +362,10 @@ Resources:
       FieldName: getTissuesCellMetadata
       DataSourceName: !GetAtt DBDataSource.Name
       RequestMappingTemplate: |
-        #set( $PUBLIC_GRANT = "{""public/*"":[""*""],""proteins"":[]}")
-        #if( $!{$ctx.request.headers.grants} )
-          $util.qr($ctx.stash.put("grants", $util.parseJson($ctx.request.headers.grants)))
+        #set( $PUBLIC_GRANT = "{""public/*"":[""*""]}")
+        #set( $inputgrant = $ctx.request.headers.grants )
+        #if($inputgrant && $inputgrant != '')
+          $util.qr($ctx.stash.put("grants", $util.parseJson($inputgrant)))
         #else
           $util.qr($ctx.stash.put("grants", $util.parseJson($PUBLIC_GRANT)))
         #end
