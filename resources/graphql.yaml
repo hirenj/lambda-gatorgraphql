@@ -44,7 +44,7 @@ Resources:
       Description: Gunzipper
       Handler: index.handler
       Role: !GetAtt 'LambdaGunzipperRole.Arn'
-      Runtime: nodejs8.10
+      Runtime: !Ref nodejsversion
       MemorySize: 128
       Timeout: 10
   LambdaGunzipperRole:
@@ -127,7 +127,7 @@ Resources:
       Description: ProtectedS3
       Handler: index.handler
       Role: !GetAtt 'LambdaProtectedS3Role.Arn'
-      Runtime: nodejs8.10
+      Runtime: !Ref nodejsversion
       MemorySize: 128
       Timeout: 10
   LambdaProtectedS3Role:
