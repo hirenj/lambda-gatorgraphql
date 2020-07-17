@@ -6,6 +6,7 @@ Resources:
     Type: "AWS::AppSync::GraphQLApi"
     Properties:
       Name: GraphQL API
+      XrayEnabled: !If [tracing, 'true', 'false']
       AuthenticationType: AWS_IAM
 
   DBDataSource:
